@@ -21,66 +21,24 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 SHOP_URL = "https://nasty-baggers-inc.myshopify.com"
 VARIANT_ID = None
 
-# ── Identity pool for randomized checkout data ──────────────────────────
-_IDENTITY_POOL = [
-    {"first": "James",   "last": "Mitchell", "address": "1842 Westwood Ave",       "city": "Toledo",       "province": "OH", "zip": "43604", "lat": 41.6639, "lng": -83.5552},
-    {"first": "Sandra",  "last": "Coleman",  "address": "374 Oak Street",           "city": "Richmond",     "province": "VA", "zip": "23220", "lat": 37.5407, "lng": -77.4360},
-    {"first": "Kevin",   "last": "Barnes",   "address": "2901 Maple Drive",         "city": "Omaha",        "province": "NE", "zip": "68102", "lat": 41.2565, "lng": -95.9345},
-    {"first": "Rachel",  "last": "Foster",   "address": "609 Elm Avenue",           "city": "Tucson",       "province": "AZ", "zip": "85701", "lat": 32.2217, "lng": -110.9265},
-    {"first": "Michael", "last": "Torres",   "address": "1155 Pine Street",         "city": "Memphis",      "province": "TN", "zip": "38103", "lat": 35.1495, "lng": -90.0490},
-    {"first": "Laura",   "last": "Bennett",  "address": "488 Birch Lane",           "city": "Louisville",   "province": "KY", "zip": "40202", "lat": 38.2527, "lng": -85.7585},
-    {"first": "Daniel",  "last": "Hughes",   "address": "733 Cedar Road",           "city": "Baltimore",    "province": "MD", "zip": "21201", "lat": 39.2904, "lng": -76.6122},
-    {"first": "Ashley",  "last": "Price",    "address": "2047 Walnut Blvd",         "city": "Albuquerque",  "province": "NM", "zip": "87102", "lat": 35.0844, "lng": -106.6504},
-    {"first": "Brian",   "last": "Jenkins",  "address": "918 Spruce Street",        "city": "Fresno",       "province": "CA", "zip": "93721", "lat": 36.7378, "lng": -119.7871},
-    {"first": "Melissa", "last": "Ward",     "address": "301 Willow Way",           "city": "Sacramento",   "province": "CA", "zip": "95814", "lat": 38.5816, "lng": -121.4944},
-    {"first": "Tyler",   "last": "Ross",     "address": "1624 Chestnut Street",     "city": "Pittsburgh",   "province": "PA", "zip": "15222", "lat": 40.4406, "lng": -79.9959},
-    {"first": "Amanda",  "last": "Perry",    "address": "556 Magnolia Ave",         "city": "Raleigh",      "province": "NC", "zip": "27601", "lat": 35.7796, "lng": -78.6382},
-    {"first": "Joshua",  "last": "Long",     "address": "2233 Highland Drive",      "city": "Minneapolis",  "province": "MN", "zip": "55401", "lat": 44.9778, "lng": -93.2650},
-    {"first": "Stephanie","last": "Patterson","address": "847 Lakeview Terrace",    "city": "New Orleans",  "province": "LA", "zip": "70112", "lat": 29.9511, "lng": -90.0715},
-    {"first": "Nathan",  "last": "Butler",   "address": "1390 Riverside Ave",       "city": "Hartford",     "province": "CT", "zip": "06103", "lat": 41.7658, "lng": -72.6851},
-]
-
-_EMAIL_DOMAINS = ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com", "protonmail.com"]
-
-def generate_identity():
-    """Generate a randomized but realistic US identity for checkout."""
-    import random as _r
-    p = _r.choice(_IDENTITY_POOL)
-    first = p["first"]
-    last  = p["last"]
-    # Randomize email: firstname.lastname + 2-4 digit number @ domain
-    num   = _r.randint(10, 9999)
-    sep   = _r.choice([".", "_", ""])
-    email = f"{first.lower()}{sep}{last.lower()}{num}@{_r.choice(_EMAIL_DOMAINS)}"
-    # Randomize phone: valid US 10-digit
-    phone = f"{_r.randint(201,989)}{_r.randint(200,999)}{_r.randint(1000,9999)}"
-    return {
-        "email":      email,
-        "first_name": first,
-        "last_name":  last,
-        "address1":   p["address"],
-        "city":       p["city"],
-        "province":   p["province"],
-        "zip":        p["zip"],
-        "country":    "US",
-        "phone":      phone,
-        "coordinates": {"latitude": p["lat"], "longitude": p["lng"]},
+CHECKOUT_DATA = {
+    "email": "test@example.com",
+    "first_name": "John",
+    "last_name": "Doe",
+    "address1": "4024 College Point Boulevard",
+    "city": "Flushing",
+    "province": "NY",
+    "zip": "11354",
+    "country": "US",
+    "phone": "2494851515",
+    "coordinates": {
+        "latitude": 40.7589,
+        "longitude": -73.9851
     }
-
-# Global default (used by standalone neww.py main() - not by bot)
-CHECKOUT_DATA = generate_identity()
-
-# Thread-local identity: each card gets its own identity via _get_cd()
-import threading as _threading
-_identity_local = _threading.local()
-
-def _get_cd():
-    """Return the current thread's checkout identity, or global default."""
-    return getattr(_identity_local, "identity", CHECKOUT_DATA)
+}
 
 def set_thread_identity(identity=None):
-    """Call before processing each card to set a fresh identity for this thread."""
-    _identity_local.identity = identity if identity is not None else generate_identity()
+    pass
 
 CARD_DATA = {
     "number": "4342580222985194",
@@ -548,14 +506,14 @@ def get_delivery_line_config(shipping_handle="any", destination_changed=True, me
     address_key = "streetAddress" if use_full_address else "partialStreetAddress"
 
     address_data = {
-        "address1": _get_cd()["address1"],
-        "city": _get_cd()["city"],
-        "countryCode": _get_cd()["country"],
-        "firstName": _get_cd()["first_name"],
-        "lastName": _get_cd()["last_name"],
-        "zoneCode": _get_cd()["province"],
-        "postalCode": _get_cd()["zip"],
-        "phone": _get_cd()["phone"] if phone_required else None
+        "address1": CHECKOUT_DATA["address1"],
+        "city": CHECKOUT_DATA["city"],
+        "countryCode": CHECKOUT_DATA["country"],
+        "firstName": CHECKOUT_DATA["first_name"],
+        "lastName": CHECKOUT_DATA["last_name"],
+        "zoneCode": CHECKOUT_DATA["province"],
+        "postalCode": CHECKOUT_DATA["zip"],
+        "phone": CHECKOUT_DATA["phone"]
     }
 
     if not use_full_address:
@@ -591,7 +549,7 @@ def get_delivery_line_config(shipping_handle="any", destination_changed=True, me
 
     if phone_required:
         try:
-            config["selectedDeliveryStrategy"]["options"] = {"phone": _get_cd()["phone"]}
+            config["selectedDeliveryStrategy"]["options"] = {"phone": CHECKOUT_DATA["phone"]}
         except Exception:
             config["selectedDeliveryStrategy"]["options"] = {"phone": str(CHECKOUT_DATA.get("phone", "") or "")}
 
@@ -614,14 +572,14 @@ def poll_for_delivery_and_expectations(session, checkout_token, session_token, m
     delivery_line = {
         "destination": {
             "partialStreetAddress": {
-                "address1": _get_cd()["address1"],
-                "city": _get_cd()["city"],
-                "countryCode": _get_cd()["country"],
-                "firstName": _get_cd()["first_name"],
-                "lastName": _get_cd()["last_name"],
-                "zoneCode": _get_cd()["province"],
-                "postalCode": _get_cd()["zip"],
-                "phone": _get_cd()["phone"],
+                "address1": CHECKOUT_DATA["address1"],
+                "city": CHECKOUT_DATA["city"],
+                "countryCode": CHECKOUT_DATA["country"],
+                "firstName": CHECKOUT_DATA["first_name"],
+                "lastName": CHECKOUT_DATA["last_name"],
+                "zoneCode": CHECKOUT_DATA["province"],
+                "postalCode": CHECKOUT_DATA["zip"],
+                "phone": CHECKOUT_DATA["phone"],
                 "oneTimeUse": False
             }
         },
@@ -638,14 +596,14 @@ def poll_for_delivery_and_expectations(session, checkout_token, session_token, m
     }
     
     billing_address_data = {
-        "address1": _get_cd()["address1"],
-        "city": _get_cd()["city"],
-        "countryCode": _get_cd()["country"],
-        "firstName": _get_cd()["first_name"],
-        "lastName": _get_cd()["last_name"],
-        "zoneCode": _get_cd()["province"],
-        "postalCode": _get_cd()["zip"],
-        "phone": _get_cd()["phone"]
+        "address1": CHECKOUT_DATA["address1"],
+        "city": CHECKOUT_DATA["city"],
+        "countryCode": CHECKOUT_DATA["country"],
+        "firstName": CHECKOUT_DATA["first_name"],
+        "lastName": CHECKOUT_DATA["last_name"],
+        "zoneCode": CHECKOUT_DATA["province"],
+        "postalCode": CHECKOUT_DATA["zip"],
+        "phone": CHECKOUT_DATA["phone"]
     }
     
     payload = {
@@ -680,9 +638,9 @@ def poll_for_delivery_and_expectations(session, checkout_token, session_token, m
                 }]
             },
             "buyerIdentity": {
-                "customer": {"presentmentCurrency": "USD", "countryCode": _get_cd()["country"]},
-                "email": _get_cd()["email"],
-                "phone": _get_cd()["phone"],
+                "customer": {"presentmentCurrency": "USD", "countryCode": CHECKOUT_DATA["country"]},
+                "email": CHECKOUT_DATA["email"],
+                "phone": CHECKOUT_DATA["phone"],
                 "phoneCountryCode": "US"
             },
             "taxes": {"proposedTotalAmount": {"any": True}},
@@ -766,7 +724,7 @@ def poll_for_delivery_and_expectations(session, checkout_token, session_token, m
                                 "customDeliveryRate": False
                             },
                             "options": {
-                                "phone": _get_cd()["phone"]
+                                "phone": CHECKOUT_DATA["phone"]
                             }
                         }
                         if shipping_amount:
@@ -845,14 +803,14 @@ def poll_proposal(session, checkout_token, session_token, merchandise_stable_id,
     delivery_line = {
         "destination": {
             "partialStreetAddress": {
-                "address1": _get_cd()["address1"],
-                "city": _get_cd()["city"],
-                "countryCode": _get_cd()["country"],
-                "firstName": _get_cd()["first_name"],
-                "lastName": _get_cd()["last_name"],
-                "zoneCode": _get_cd()["province"],
-                "postalCode": _get_cd()["zip"],
-                "phone": _get_cd()["phone"],
+                "address1": CHECKOUT_DATA["address1"],
+                "city": CHECKOUT_DATA["city"],
+                "countryCode": CHECKOUT_DATA["country"],
+                "firstName": CHECKOUT_DATA["first_name"],
+                "lastName": CHECKOUT_DATA["last_name"],
+                "zoneCode": CHECKOUT_DATA["province"],
+                "postalCode": CHECKOUT_DATA["zip"],
+                "phone": CHECKOUT_DATA["phone"],
                 "oneTimeUse": False
             }
         },
@@ -865,7 +823,7 @@ def poll_proposal(session, checkout_token, session_token, merchandise_stable_id,
                 "customDeliveryRate": False
             },
             "options": {
-                "phone": _get_cd()["phone"]
+                "phone": CHECKOUT_DATA["phone"]
             }
         },
         "expectedTotalPrice": {"any": True}
@@ -875,14 +833,14 @@ def poll_proposal(session, checkout_token, session_token, merchandise_stable_id,
         delivery_line["expectedTotalPrice"] = {"value": {"amount": str(shipping_amount), "currencyCode": "USD"}}
     
     billing_address_data = {
-        "address1": _get_cd()["address1"],
-        "city": _get_cd()["city"],
-        "countryCode": _get_cd()["country"],
-        "firstName": _get_cd()["first_name"],
-        "lastName": _get_cd()["last_name"],
-        "zoneCode": _get_cd()["province"],
-        "postalCode": _get_cd()["zip"],
-        "phone": _get_cd()["phone"]
+        "address1": CHECKOUT_DATA["address1"],
+        "city": CHECKOUT_DATA["city"],
+        "countryCode": CHECKOUT_DATA["country"],
+        "firstName": CHECKOUT_DATA["first_name"],
+        "lastName": CHECKOUT_DATA["last_name"],
+        "zoneCode": CHECKOUT_DATA["province"],
+        "postalCode": CHECKOUT_DATA["zip"],
+        "phone": CHECKOUT_DATA["phone"]
     }
     
     payload = {
@@ -920,9 +878,9 @@ def poll_proposal(session, checkout_token, session_token, merchandise_stable_id,
                 }]
             },
             "buyerIdentity": {
-                "customer": {"presentmentCurrency": "USD", "countryCode": _get_cd()["country"]},
-                "email": _get_cd()["email"],
-                "phone": _get_cd()["phone"],
+                "customer": {"presentmentCurrency": "USD", "countryCode": CHECKOUT_DATA["country"]},
+                "email": CHECKOUT_DATA["email"],
+                "phone": CHECKOUT_DATA["phone"],
                 "phoneCountryCode": "US"
             },
             "taxes": {"proposedTotalAmount": {"any": True}},
@@ -1029,14 +987,14 @@ def step3_proposal(session, checkout_token, session_token, card_session_id):
     )
     
     billing_address_data = {
-        "address1": _get_cd()["address1"],
-        "city": _get_cd()["city"],
-        "countryCode": _get_cd()["country"],
-        "firstName": _get_cd()["first_name"],
-        "lastName": _get_cd()["last_name"],
-        "zoneCode": _get_cd()["province"],
-        "postalCode": _get_cd()["zip"],
-        "phone": _get_cd()["phone"]
+        "address1": CHECKOUT_DATA["address1"],
+        "city": CHECKOUT_DATA["city"],
+        "countryCode": CHECKOUT_DATA["country"],
+        "firstName": CHECKOUT_DATA["first_name"],
+        "lastName": CHECKOUT_DATA["last_name"],
+        "zoneCode": CHECKOUT_DATA["province"],
+        "postalCode": CHECKOUT_DATA["zip"],
+        "phone": CHECKOUT_DATA["phone"]
     }
     
     payload = {
@@ -1082,9 +1040,9 @@ def step3_proposal(session, checkout_token, session_token, card_session_id):
                 }]
             },
             "buyerIdentity": {
-                "customer": {"presentmentCurrency": "USD", "countryCode": _get_cd()["country"]},
-                "email": _get_cd()["email"],
-                "phone": _get_cd()["phone"],
+                "customer": {"presentmentCurrency": "USD", "countryCode": CHECKOUT_DATA["country"]},
+                "email": CHECKOUT_DATA["email"],
+                "phone": CHECKOUT_DATA["phone"],
                 "phoneCountryCode": "US"
             },
             "taxes": {"proposedTotalAmount": {"any": True}},
@@ -1244,20 +1202,19 @@ def step4_submit_completion(session, checkout_token, session_token, queue_token,
         destination_changed=False,
         merchandise_stable_id=merchandise_stable_id,
         use_full_address=True,
-        phone_required=phone_required
+        phone_required=True
     )
     
     billing_address_data = {
-        "address1": _get_cd()["address1"],
-        "city": _get_cd()["city"],
-        "countryCode": _get_cd()["country"],
-        "postalCode": _get_cd()["zip"],
-        "firstName": _get_cd()["first_name"],
-        "lastName": _get_cd()["last_name"],
-        "zoneCode": _get_cd()["province"]
+        "address1": CHECKOUT_DATA["address1"],
+        "city": CHECKOUT_DATA["city"],
+        "countryCode": CHECKOUT_DATA["country"],
+        "postalCode": CHECKOUT_DATA["zip"],
+        "firstName": CHECKOUT_DATA["first_name"],
+        "lastName": CHECKOUT_DATA["last_name"],
+        "zoneCode": CHECKOUT_DATA["province"],
+        "phone": CHECKOUT_DATA["phone"]
     }
-    if phone_required:
-        billing_address_data["phone"] = _get_cd()["phone"]
     
     delivery_expectation_lines = []
     for exp in delivery_expectations:
@@ -1305,13 +1262,12 @@ def step4_submit_completion(session, checkout_token, session_token, queue_token,
             "billingAddress": {"streetAddress": billing_address_data}
         },
         "buyerIdentity": {
-            "customer": {"presentmentCurrency": "USD", "countryCode": _get_cd()["country"]},
-            "email": _get_cd()["email"],
-            "phone": _get_cd()["phone"] if phone_required else None,
+            "customer": {"presentmentCurrency": "USD", "countryCode": CHECKOUT_DATA["country"]},
+            "email": CHECKOUT_DATA["email"],
             "emailChanged": False,
-            "phoneCountryCode": "US" if phone_required else None,
+            "phoneCountryCode": "US",
             "marketingConsent": [],
-            "shopPayOptInPhone": {"number": _get_cd()["phone"], "countryCode": "US"} if phone_required else None,
+            "shopPayOptInPhone": {"number": CHECKOUT_DATA["phone"], "countryCode": "US"},
             "rememberMe": False
         },
         "tip": {"tipLines": []},
@@ -2879,14 +2835,14 @@ def poll_for_delivery_and_expectations_ctx(session, checkout_token, session_toke
     delivery_line = {
         "destination": {
             "partialStreetAddress": {
-                "address1": _get_cd()["address1"],
-                "city": _get_cd()["city"],
-                "countryCode": _get_cd()["country"],
-                "firstName": _get_cd()["first_name"],
-                "lastName": _get_cd()["last_name"],
-                "zoneCode": _get_cd()["province"],
-                "postalCode": _get_cd()["zip"],
-                "phone": _get_cd()["phone"],
+                "address1": CHECKOUT_DATA["address1"],
+                "city": CHECKOUT_DATA["city"],
+                "countryCode": CHECKOUT_DATA["country"],
+                "firstName": CHECKOUT_DATA["first_name"],
+                "lastName": CHECKOUT_DATA["last_name"],
+                "zoneCode": CHECKOUT_DATA["province"],
+                "postalCode": CHECKOUT_DATA["zip"],
+                "phone": CHECKOUT_DATA["phone"],
                 "oneTimeUse": False
             }
         },
@@ -2902,14 +2858,14 @@ def poll_for_delivery_and_expectations_ctx(session, checkout_token, session_toke
         "expectedTotalPrice": {"any": True}
     }
     billing_address_data = {
-        "address1": _get_cd()["address1"],
-        "city": _get_cd()["city"],
-        "countryCode": _get_cd()["country"],
-        "firstName": _get_cd()["first_name"],
-        "lastName": _get_cd()["last_name"],
-        "zoneCode": _get_cd()["province"],
-        "postalCode": _get_cd()["zip"],
-        "phone": _get_cd()["phone"]
+        "address1": CHECKOUT_DATA["address1"],
+        "city": CHECKOUT_DATA["city"],
+        "countryCode": CHECKOUT_DATA["country"],
+        "firstName": CHECKOUT_DATA["first_name"],
+        "lastName": CHECKOUT_DATA["last_name"],
+        "zoneCode": CHECKOUT_DATA["province"],
+        "postalCode": CHECKOUT_DATA["zip"],
+        "phone": CHECKOUT_DATA["phone"]
     }
     payload = {
         "operationName": "Proposal",
@@ -2943,9 +2899,9 @@ def poll_for_delivery_and_expectations_ctx(session, checkout_token, session_toke
                 }]
             },
             "buyerIdentity": {
-                "customer": {"presentmentCurrency": "USD", "countryCode": _get_cd()["country"]},
-                "email": _get_cd()["email"],
-                "phone": _get_cd()["phone"],
+                "customer": {"presentmentCurrency": "USD", "countryCode": CHECKOUT_DATA["country"]},
+                "email": CHECKOUT_DATA["email"],
+                "phone": CHECKOUT_DATA["phone"],
                 "phoneCountryCode": "US"
             },
             "taxes": {"proposedTotalAmount": {"any": True}},
@@ -3013,7 +2969,7 @@ def poll_for_delivery_and_expectations_ctx(session, checkout_token, session_toke
                                 "handle": shipping_handle,
                                 "customDeliveryRate": False
                             },
-                            "options": {"phone": _get_cd()["phone"]}
+                            "options": {"phone": CHECKOUT_DATA["phone"]}
                         }
                         if shipping_amount:
                             delivery_line["expectedTotalPrice"] = {
@@ -3061,14 +3017,14 @@ def poll_proposal_ctx(session, checkout_token, session_token, merchandise_stable
     delivery_line = {
         "destination": {
             "partialStreetAddress": {
-                "address1": _get_cd()["address1"],
-                "city": _get_cd()["city"],
-                "countryCode": _get_cd()["country"],
-                "firstName": _get_cd()["first_name"],
-                "lastName": _get_cd()["last_name"],
-                "zoneCode": _get_cd()["province"],
-                "postalCode": _get_cd()["zip"],
-                "phone": _get_cd()["phone"],
+                "address1": CHECKOUT_DATA["address1"],
+                "city": CHECKOUT_DATA["city"],
+                "countryCode": CHECKOUT_DATA["country"],
+                "firstName": CHECKOUT_DATA["first_name"],
+                "lastName": CHECKOUT_DATA["last_name"],
+                "zoneCode": CHECKOUT_DATA["province"],
+                "postalCode": CHECKOUT_DATA["zip"],
+                "phone": CHECKOUT_DATA["phone"],
                 "oneTimeUse": False
             }
         },
@@ -3080,21 +3036,21 @@ def poll_proposal_ctx(session, checkout_token, session_token, merchandise_stable
                 "handle": shipping_handle,
                 "customDeliveryRate": False
             },
-            "options": {"phone": _get_cd()["phone"]}
+            "options": {"phone": CHECKOUT_DATA["phone"]}
         },
         "expectedTotalPrice": {"any": True}
     }
     if shipping_amount:
         delivery_line["expectedTotalPrice"] = {"value": {"amount": str(shipping_amount), "currencyCode": "USD"}}
     billing_address_data = {
-        "address1": _get_cd()["address1"],
-        "city": _get_cd()["city"],
-        "countryCode": _get_cd()["country"],
-        "firstName": _get_cd()["first_name"],
-        "lastName": _get_cd()["last_name"],
-        "zoneCode": _get_cd()["province"],
-        "postalCode": _get_cd()["zip"],
-        "phone": _get_cd()["phone"]
+        "address1": CHECKOUT_DATA["address1"],
+        "city": CHECKOUT_DATA["city"],
+        "countryCode": CHECKOUT_DATA["country"],
+        "firstName": CHECKOUT_DATA["first_name"],
+        "lastName": CHECKOUT_DATA["last_name"],
+        "zoneCode": CHECKOUT_DATA["province"],
+        "postalCode": CHECKOUT_DATA["zip"],
+        "phone": CHECKOUT_DATA["phone"]
     }
     payload = {
         "operationName": "Proposal",
@@ -3128,9 +3084,9 @@ def poll_proposal_ctx(session, checkout_token, session_token, merchandise_stable
                 }]
             },
             "buyerIdentity": {
-                "customer": {"presentmentCurrency": "USD", "countryCode": _get_cd()["country"]},
-                "email": _get_cd()["email"],
-                "phone": _get_cd()["phone"],
+                "customer": {"presentmentCurrency": "USD", "countryCode": CHECKOUT_DATA["country"]},
+                "email": CHECKOUT_DATA["email"],
+                "phone": CHECKOUT_DATA["phone"],
                 "phoneCountryCode": "US"
             },
             "taxes": {"proposedTotalAmount": {"any": True}},
@@ -3235,14 +3191,14 @@ def step3_proposal_ctx(session, checkout_token, session_token, card_session_id, 
         phone_required=True
     )
     billing_address_data = {
-        "address1": _get_cd()["address1"],
-        "city": _get_cd()["city"],
-        "countryCode": _get_cd()["country"],
-        "firstName": _get_cd()["first_name"],
-        "lastName": _get_cd()["last_name"],
-        "zoneCode": _get_cd()["province"],
-        "postalCode": _get_cd()["zip"],
-        "phone": _get_cd()["phone"]
+        "address1": CHECKOUT_DATA["address1"],
+        "city": CHECKOUT_DATA["city"],
+        "countryCode": CHECKOUT_DATA["country"],
+        "firstName": CHECKOUT_DATA["first_name"],
+        "lastName": CHECKOUT_DATA["last_name"],
+        "zoneCode": CHECKOUT_DATA["province"],
+        "postalCode": CHECKOUT_DATA["zip"],
+        "phone": CHECKOUT_DATA["phone"]
     }
     payload = {
         "operationName": "Proposal",
@@ -3276,9 +3232,9 @@ def step3_proposal_ctx(session, checkout_token, session_token, card_session_id, 
                 }]
             },
             "buyerIdentity": {
-                "customer": {"presentmentCurrency": "USD", "countryCode": _get_cd()["country"]},
-                "email": _get_cd()["email"],
-                "phone": _get_cd()["phone"],
+                "customer": {"presentmentCurrency": "USD", "countryCode": CHECKOUT_DATA["country"]},
+                "email": CHECKOUT_DATA["email"],
+                "phone": CHECKOUT_DATA["phone"],
                 "phoneCountryCode": "US"
             },
             "taxes": {"proposedTotalAmount": {"any": True}},
@@ -3440,19 +3396,18 @@ def step4_submit_completion_ctx(session, checkout_token, session_token, queue_to
         destination_changed=False,
         merchandise_stable_id=merchandise_stable_id,
         use_full_address=True,
-        phone_required=phone_required
+        phone_required=True
     )
     billing_address_data = {
-        "address1": _get_cd()["address1"],
-        "city": _get_cd()["city"],
-        "countryCode": _get_cd()["country"],
-        "postalCode": _get_cd()["zip"],
-        "firstName": _get_cd()["first_name"],
-        "lastName": _get_cd()["last_name"],
-        "zoneCode": _get_cd()["province"]
+        "address1": CHECKOUT_DATA["address1"],
+        "city": CHECKOUT_DATA["city"],
+        "countryCode": CHECKOUT_DATA["country"],
+        "postalCode": CHECKOUT_DATA["zip"],
+        "firstName": CHECKOUT_DATA["first_name"],
+        "lastName": CHECKOUT_DATA["last_name"],
+        "zoneCode": CHECKOUT_DATA["province"],
+        "phone": CHECKOUT_DATA["phone"]
     }
-    if phone_required:
-        billing_address_data["phone"] = _get_cd()["phone"]
     delivery_expectation_lines = []
     for exp in delivery_expectations:
         delivery_expectation_lines.append({"signedHandle": exp["signedHandle"]})
@@ -3504,13 +3459,12 @@ def step4_submit_completion_ctx(session, checkout_token, session_token, queue_to
             "billingAddress": {"streetAddress": billing_address_data}
         },
         "buyerIdentity": {
-            "customer": {"presentmentCurrency": "USD", "countryCode": _get_cd()["country"]},
-            "email": _get_cd()["email"],
-            "phone": _get_cd()["phone"] if phone_required else None,
+            "customer": {"presentmentCurrency": "USD", "countryCode": CHECKOUT_DATA["country"]},
+            "email": CHECKOUT_DATA["email"],
             "emailChanged": False,
-            "phoneCountryCode": "US" if phone_required else None,
+            "phoneCountryCode": "US",
             "marketingConsent": [],
-            "shopPayOptInPhone": {"number": _get_cd()["phone"], "countryCode": "US"} if phone_required else None,
+            "shopPayOptInPhone": {"number": CHECKOUT_DATA["phone"], "countryCode": "US"},
             "rememberMe": False
         },
         "tip": {"tipLines": []},

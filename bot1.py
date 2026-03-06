@@ -398,26 +398,23 @@ def result_notify_text(card: Dict, status: str, code_display: str, amount_displa
     mm_str = f"{mm:02d}"
     yy_str = f"{yy % 100:02d}"
 
-    # Status header
     if status == "charged":
-        header = "💎 CHARGED"
+        header = "🟢 CHARGED 💎"
     elif status == "approved":
         code_upper = (code_display or "").upper()
         if "ACTION_REQUIRED" in code_upper or "3D" in code_upper:
-            header = "🔐 APPROVED (3D)"
+            header = "🟡 APPROVED (3D) 🔐"
         else:
-            header = "✅ APPROVED"
+            header = "🟢 APPROVED ✅"
     elif status in ("captcha", "unknown"):
         header = "⚠️ UNKNOWN"
     else:
         header = "❌ DECLINED"
 
-    # Card line — use raw month (no padding), full 4-digit year
-    raw_mm = str(mm)  # e.g. 8 not 08
-    raw_yy = str(yy) if yy >= 2000 else str(yy + 2000)  # e.g. 2028 not 28
+    raw_mm = str(mm)
+    raw_yy = str(yy) if yy >= 2000 else str(yy + 2000)
     card_line = f"{pan}|{raw_mm}|{raw_yy}|{cvv}"
 
-    # BIN info — flag already embedded in country_str from get_bin_line
     bin_line = ""
     country_line = ""
     try:
@@ -430,24 +427,41 @@ def result_notify_text(card: Dict, status: str, code_display: str, amount_displa
     except Exception:
         pass
 
-    # Amount — show $0 for captcha/unknown, actual amount for others
     if status in ("captcha", "unknown"):
         amt = "$0"
     else:
         amt = amount_display.strip() if isinstance(amount_display, str) and amount_display.strip() else "$0"
 
-    # Code — keep raw display (preserve "code": "..." format)
     if status == "charged":
-        code_line = "SUCCESS"
+        code_line = "ProcessedReceipt"
     else:
         code_line = code_display or ""
 
-    parts = [header, card_line]
-    if bin_line:
-        parts.append(bin_line)
-    if country_line:
-        parts.append(country_line)
-    parts.append(f"Code: {code_line}")
-    parts.append(f"Amount: {amt}")
+    site = site_label or ""
+    user_display = user_info or ""
 
-    return "\n".join(parts)
+    if status in ("approved", "charged"):
+        parts = [
+            header,
+            "______________________________",
+            f"💳 Card: {card_line}",
+            f"🏦 BIN: {bin_line}" if bin_line else None,
+            f"🌍 Country: {country_line}" if country_line else None,
+            f"🔑 Code: {code_line}",
+            f"🏪 Site: {site}" if site else None,
+            f"💰 Amount: {amt}",
+            f"🧾 Receipt: {receipt_id}" if receipt_id else None,
+            f"👤 User: {user_display}" if user_display else None,
+        ]
+        return "\n".join(p for p in parts if p is not None)
+    else:
+        parts = [header, card_line]
+        if bin_line:
+            parts.append(bin_line)
+        if country_line:
+            parts.append(country_line)
+        parts.append(f"Code: {code_line}")
+        parts.append(f"Amount: {amt}")
+        if receipt_id:
+            parts.append(f"Receipt: {receipt_id}")
+        return "\n".join(parts)
