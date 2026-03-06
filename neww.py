@@ -53,7 +53,7 @@ def generate_identity():
     sep   = _r.choice([".", "_", ""])
     email = f"{first.lower()}{sep}{last.lower()}{num}@{_r.choice(_EMAIL_DOMAINS)}"
     # Randomize phone: valid US 10-digit
-    phone = f"+1{_r.randint(201,989)}{_r.randint(200,999)}{_r.randint(1000,9999)}"
+    phone = f"{_r.randint(201,989)}{_r.randint(200,999)}{_r.randint(1000,9999)}"
     return {
         "email":      email,
         "first_name": first,
@@ -555,7 +555,7 @@ def get_delivery_line_config(shipping_handle="any", destination_changed=True, me
         "lastName": _get_cd()["last_name"],
         "zoneCode": _get_cd()["province"],
         "postalCode": _get_cd()["zip"],
-        "phone": _get_cd()["phone"]
+        "phone": _get_cd()["phone"] if phone_required else None
     }
 
     if not use_full_address:

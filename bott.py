@@ -855,8 +855,6 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
     except Exception:
         used_proxy_url = None
     
-    _captcha_site_hits = 0
-    _sites_tried = 0
     for site_idx, site in enumerate(ordered_sites):
         # Check for cancellation BEFORE starting this site
         try:
@@ -1313,18 +1311,17 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
                     "PAYMENTS_METHOD",
                     "DELIVERY_DELIVERY_LINE_DETAIL_CHANGED",
                     "PAYMENTS_PAYMENT_FLEXIBILITY_TERMS_ID_MISMATCH",
+                    "DELIVERY_PHONE_NUMBER_DOES_NOT_MATCH_EXPECTED_PATTERN",
                     "VALIDATION_CUSTOM",
                     "VALIDATION_",
                     "PAYMENTS_CREDIT_CARD_SESSION_ID",
                     "PAYMENTS_NON_TEST_ORDER_LIMIT_REACHED",
                 )
-                
-                # --- CAPTCHA detection: try next site for this card ---
+
+                # --- CAPTCHA: skip this card immediately (no multi-site retry) ---
                 if "CAPTCHA_METADATA_MISSING" in submit_upper or "CAPTCHA" in submit_upper:
                     update_site_health(shop_url, "captcha")
-                    _captcha_site_hits += 1
-                    _sites_tried += 1
-                    continue  # try next site
+                    return "captcha", '"code": "CAPTCHA_REQUIRED"', "$0", "", used_proxy_url, shop_url, None
                 
                 # Check if submit_code indicates a site-level error that requires site removal
                 is_site_level_error = any(tok in submit_upper for tok in site_level_submit_errors)
@@ -1436,11 +1433,9 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
                 code_display = '"code": "UNKNOWN"'
             status = classify_prefix(code_display)
             if status == "captcha":
-                # CAPTCHA at step5: try next site for this card
+                # CAPTCHA at step5: skip card immediately (no multi-site retry)
                 update_site_health(shop_url, "captcha")
-                _captcha_site_hits += 1
-                _sites_tried += 1
-                continue
+                return "captcha", '"code": "CAPTCHA_REQUIRED"', "$0", "", used_proxy_url, shop_url, None
             if status == "unknown":
                 try:
                     receipt = (poll_response or {}).get("data", {}).get("receipt", {}) if isinstance(poll_response, dict) else {}
@@ -1514,7 +1509,6 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
                     update_site_health(shop_url, "success")
             except Exception as track_err:
                 logger.debug(f"Failed to track site health: {track_err}")
-            _sites_tried += 1
             return status, code_display, _amount_display(), site_label, used_proxy_url, shop_url, receipt_id
 
         except Exception as e:
@@ -1581,9 +1575,6 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
         code_msg = f'"code": "{single}"'
     else:
         code_msg = '"code": "UNKNOWN"'
-    # If all sites gave CAPTCHA, report as captcha not unknown
-    if _captcha_site_hits > 0 and _sites_tried > 0 and _captcha_site_hits >= _sites_tried:
-        return "captcha", '"code": "CAPTCHA_REQUIRED"', "$0", "", used_proxy_url, None, None
     return "unknown", code_msg, "$0", "", used_proxy_url, None, None
 
 class BatchRunner:
