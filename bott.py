@@ -2767,7 +2767,7 @@ class BatchRunner:
                         pass
                 if lines:
                     file_content = "\n".join(lines).encode("utf-8")
-                    fname = f"captcha_required_{self.user_id}_{self.batch_id}.txt"
+                    fname = f"captcha_required_{self.user_id}_{self.batch_id.replace(':', '_')}.txt"
                     await update.effective_chat.send_document(
                         document=io.BytesIO(file_content),
                         filename=fname,
@@ -4326,7 +4326,7 @@ async def cmd_sh(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             pass
                     if _lines:
                         _fc = "\n".join(_lines).encode("utf-8")
-                        _fn = f"captcha_required_{user_id}_{batch_id}.txt"
+                        _fn = f"captcha_required_{user_id}_{batch_id.replace(':', '_')}.txt"
                         await update.effective_chat.send_document(
                             document=_io.BytesIO(_fc),
                             filename=_fn,
