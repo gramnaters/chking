@@ -1190,7 +1190,7 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
 
             card_session_id = checkout.step2_tokenize_card_ctx(session, checkout_token, shop_url, card_data)
             if not card_session_id:
-                continue
+                return "declined", '"code": "CARD_TOKENIZATION_FAILED"', "$0", site_label, used_proxy_url, shop_url, None
 
             queue_token, shipping_handle, merchandise_id, actual_total, delivery_expectations, phone_required = checkout.step3_proposal_ctx(
                 session, checkout_token, session_token, card_session_id, shop_url, variant_id
@@ -1200,9 +1200,8 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
                 print(f"[DEBUG] - queue_token: {queue_token[:30] if queue_token else None}")
                 print(f"[DEBUG] - shipping_handle: {shipping_handle[:50] if shipping_handle else None}")
                 
-                # Remove site from working_sites.txt - this is a site-level issue
                 missing_field = "queue_token" if not queue_token else "shipping_handle"
-                logger.warning(f"Site {shop_url} missing {missing_field} - removing from working_sites.txt")
+                logger.warning(f"Site {shop_url} missing {missing_field}")
                 
                 try:
                     with BOT_PRODUCT_CACHE_LOCK:
@@ -1211,13 +1210,6 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
                 except Exception:
                     pass
                 
-                # DISABLED: Site removal disabled - never remove sites
-                # try:
-                #     checkout.remove_site_from_working_sites(shop_url)
-                #     log_site_removal(shop_url, f"Missing {missing_field}")
-                #     logger.info(f"Removed site {shop_url} (missing {missing_field}) from working_sites.txt")
-                # except Exception as e:
-                #     logger.error(f"Failed to remove site {shop_url}: {e}")
                 logger.info(f"Site {shop_url} missing {missing_field} but removal is disabled")
                 
                 try:
@@ -1226,7 +1218,7 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
                 except Exception:
                     pass
                 
-                continue
+                return "declined", f'"code": "MISSING_{missing_field.upper()}"', "$0", site_label, used_proxy_url, shop_url, None
 
             # Check for cancellation before Step 4 (submission - can be slow)
             try:
@@ -1398,15 +1390,18 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
                         print(f"[DEBUG] Step 4 - Site removed from current sites list")
                     except Exception as e:
                         print(f"[DEBUG] Step 4 - Failed to remove site from list: {e}")
-                    print(f"[DEBUG] Step 4 - Continuing to next site for same card")
-                    continue
+                    print(f"[DEBUG] Step 4 - Skip mode: returning site error instead of retrying")
+                    try:
+                        code_display = f'"code": "{str(submit_code)}"' if isinstance(submit_code, str) and submit_code else '"code": "SITE_ERROR"'
+                    except Exception:
+                        code_display = '"code": "SITE_ERROR"'
+                    status = classify_prefix(code_display)
+                    return status, code_display, _amount_display(), site_label, used_proxy_url, shop_url, None
                 try:
                     code_display = f'"code": "{str(submit_code)}"' if isinstance(submit_code, str) and submit_code else '"code": "UNKNOWN"'
                 except Exception:
                     code_display = '"code": "UNKNOWN"'
                 status = classify_prefix(code_display)
-                if status == "unknown":
-                    continue
                 return status, code_display, _amount_display(), site_label, used_proxy_url, shop_url, None
             
             if isinstance(receipt_id, str) and not receipt_id.startswith("gid://shopify/"):
@@ -1871,7 +1866,7 @@ class BatchRunner:
 
         elapsed_s = int(__import__("time").time() - (self.start_ts or __import__("time").time()))
         if self.processed == self.total:
-            _final_text = "📊 Check Complete\n"
+            _final_text = "🏁 Check Complete\n"
         else:
             _final_text = f"🛑 Stopped ({self.processed}/{self.total})\n"
         _final_text += (
@@ -1882,7 +1877,7 @@ class BatchRunner:
         )
         if hasattr(self, 'captcha') and self.captcha > 0:
             _final_text += f"\n⚠️ CAPTCHA: {self.captcha}"
-        _final_text += f"\n⏱️ Time: {elapsed_s}s"
+        _final_text += f"\n⏱ Time: {elapsed_s}s"
         await update.effective_chat.send_message(
             text=_final_text,
             parse_mode=ParseMode.HTML,
@@ -2782,7 +2777,7 @@ class BatchRunner:
                 logger.error(f"Failed to send captcha file: {cap_err}")
 
         if self.processed == self.total:
-            final_text = "📊 Check Complete\n"
+            final_text = "🏁 Check Complete\n"
         else:
             final_text = f"🛑 Stopped ({self.processed}/{self.total})\n"
         final_text += (
@@ -2793,7 +2788,7 @@ class BatchRunner:
         )
         if self.captcha > 0:
             final_text += f"\n⚠️ CAPTCHA: {self.captcha}"
-        final_text += f"\n⏱️ Time: {elapsed_s}s"
+        final_text += f"\n⏱ Time: {elapsed_s}s"
         try:
             await update.effective_chat.send_message(
                 text=final_text,
@@ -4344,7 +4339,7 @@ async def cmd_sh(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elapsed_s = int(time.time() - start_ts)
             _total = len(cards)
             if processed >= _total:
-                _summary = "📊 Check Complete\n"
+                _summary = "🏁 Check Complete\n"
             else:
                 _summary = f"🛑 Stopped ({processed}/{_total})\n"
             _summary += (
@@ -4355,7 +4350,7 @@ async def cmd_sh(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             if captcha > 0:
                 _summary += f"\n⚠️ CAPTCHA: {captcha}"
-            _summary += f"\n⏱️ Time: {elapsed_s}s"
+            _summary += f"\n⏱ Time: {elapsed_s}s"
             try:
                 await update.effective_chat.send_message(
                     text=_summary,
