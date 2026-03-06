@@ -402,7 +402,11 @@ def result_notify_text(card: Dict, status: str, code_display: str, amount_displa
     if status == "charged":
         header = "💎 CHARGED"
     elif status == "approved":
-        header = "✅ APPROVED"
+        code_upper = (code_display or "").upper()
+        if "ACTION_REQUIRED" in code_upper or "3D" in code_upper:
+            header = "🔐 APPROVED (3D)"
+        else:
+            header = "✅ APPROVED"
     elif status in ("captcha", "unknown"):
         header = "⚠️ UNKNOWN"
     else:
