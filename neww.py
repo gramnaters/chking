@@ -3886,7 +3886,11 @@ def process_card(idx, card, sites, site_product_cache):
                 actual_total, delivery_expectations, shop_url, variant_id, phone_required
             )
             if isinstance(receipt_result, tuple):
-                if len(receipt_result) >= 4:
+                if len(receipt_result) >= 5:
+                    receipt_id, submit_code, submit_message, submit_resp, amount_from_step4 = receipt_result
+                    if not actual_total and amount_from_step4:
+                        actual_total = amount_from_step4
+                elif len(receipt_result) >= 4:
                     receipt_id, submit_code, submit_message, submit_resp = receipt_result
                 else:
                     receipt_id, submit_code, submit_message = receipt_result
